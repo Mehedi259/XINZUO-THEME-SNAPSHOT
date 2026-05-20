@@ -1,5 +1,6 @@
 # Bundle Builder Fix - TYICDI Challenge Submission
 
+
 ## Quick Summary
 
 Fixed the **completely broken Bundle Builder** page (`/pages/bundle-builder`) by converting it from a framework-dependent component to a standalone vanilla web component.
@@ -41,6 +42,22 @@ The fix works directly in the browser with no build step required. To test:
 3. Select 3+ products to unlock 10% discount
 4. Select 5+ products to unlock 15% discount
 5. Click "Add Bundle to Cart"
+
+## Commit History
+
+This fix was implemented in 3 meaningful commits:
+
+1. **Initial setup** (085abb9) - Documentation and problem analysis
+2. **Core fix** (4cbe8d7) - Vanilla web component implementation
+3. **Polish** (8c937cb) - UX enhancements and visual feedback
+
+### What's Included in the Polish
+
+- ✨ Empty state with "View All" button when no products in filtered series
+- ⌨️ Enhanced keyboard navigation with visible focus rings (WCAG 2.1 AA)
+- 🔄 Loading spinner animation during cart operations
+- ✅ Success/error states with icons for better feedback
+- 🎨 Smooth transitions and professional animations
 
 ## Why This Fix?
 
