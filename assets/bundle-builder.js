@@ -170,8 +170,14 @@ class BundleBuilderComponent extends HTMLElement {
     this.#isAddingToCart = true;
     const btn = this.#refs.addToCartBtn;
     const originalText = btn.textContent;
-    btn.textContent = 'Adding...';
+    
+    // Add loading animation
+    btn.innerHTML = `
+      <span class="bundle-summary__cta-spinner"></span>
+      <span>Adding...</span>
+    `;
     btn.disabled = true;
+    btn.classList.add('bundle-summary__cta--loading');
 
     try {
       const bundleId = `bundle_${Date.now()}`;
@@ -219,17 +225,31 @@ class BundleBuilderComponent extends HTMLElement {
         }
       }));
 
-      btn.textContent = 'Added to Cart!';
+      // Success state
+      btn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+        <span>Added to Cart!</span>
+      `;
+      btn.classList.remove('bundle-summary__cta--loading');
+      btn.classList.add('bundle-summary__cta--success');
+      
       setTimeout(() => {
         btn.textContent = originalText;
+        btn.classList.remove('bundle-summary__cta--success');
         btn.disabled = false;
         this.#isAddingToCart = false;
       }, 2500);
     } catch (error) {
       console.error('Bundle add to cart error:', error);
       btn.textContent = 'Error - Try Again';
+      btn.classList.remove('bundle-summary__cta--loading');
+      btn.classList.add('bundle-summary__cta--error');
+      
       setTimeout(() => {
         btn.textContent = originalText;
+        btn.classList.remove('bundle-summary__cta--error');
         btn.disabled = false;
         this.#isAddingToCart = false;
       }, 2000);
@@ -311,20 +331,65 @@ class BundleBuilderComponent extends HTMLElement {
 
   #filterCards() {
     const cards = this.#refs.cards || [];
+    let visibleCount = 0;
+    
     for (const card of cards) {
       if (this.#activeTab === 'all') {
         card.style.display = '';
         card.removeAttribute('hidden');
+        visibleCount++;
       } else {
         const seriesList = (card.dataset.series || '').split(' ');
         const matches = seriesList.includes(this.#activeTab);
         card.style.display = matches ? '' : 'none';
         if (matches) {
           card.removeAttribute('hidden');
+          visibleCount++;
         } else {
           card.setAttribute('hidden', '');
         }
       }
+    }
+    
+    // Show/hide empty state message
+    this.#updateEmptyState(visibleCount);
+  }
+
+  #updateEmptyState(visibleCount) {
+    const grid = this.#refs.grid;
+    if (!grid) return;
+    
+    // Remove existing empty state if any
+    const existingEmpty = grid.querySelector('.bundle-builder__empty-state');
+    if (existingEmpty) {
+      existingEmpty.remove();
+    }
+    
+    // Show empty state if no products visible
+    if (visibleCount === 0) {
+      const emptyState = document.createElement('div');
+      emptyState.className = 'bundle-builder__empty-state';
+      emptyState.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        <p>No products available in this series</p>
+        <button class="bundle-builder__empty-cta">View All Products</button>
+      `;
+      
+      // Add click handler to "View All" button
+      const viewAllBtn = emptyState.querySelector('.bundle-builder__empty-cta');
+      if (viewAllBtn) {
+        viewAllBtn.addEventListener('click', () => {
+          this.#handleTabClick('all');
+          // Scroll to top of grid
+          grid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      }
+      
+      grid.appendChild(emptyState);
     }
   }
 

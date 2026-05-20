@@ -209,6 +209,56 @@ bundle-builder-component {
   display: grid;
   grid-template-columns: repeat(var(--bundle-columns-desktop, 4), 1fr);
   gap: 32px;
+  position: relative;
+  min-height: 400px;
+}
+
+/* Empty State */
+.bundle-builder__empty-state {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  text-align: center;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.bundle-builder__empty-state svg {
+  color: rgba(255, 255, 255, 0.3);
+  margin-bottom: 24px;
+}
+
+.bundle-builder__empty-state p {
+  font-family: "Sen", sans-serif;
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.6);
+  margin: 0 0 24px;
+}
+
+.bundle-builder__empty-cta {
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  color: #fff;
+  font-family: "Sen", sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bundle-builder__empty-cta:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
 }
 
 /* ============================================
@@ -230,6 +280,19 @@ bundle-builder-component {
 .bundle-card:hover {
   border-color: rgba(255, 255, 255, 0.2);
   transform: translateY(-2px);
+}
+
+/* Keyboard Focus State */
+.bundle-card:focus {
+  outline: none;
+  border-color: var(--xinzuo-accent, #FFD380);
+  box-shadow: 0 0 0 3px rgba(255, 211, 128, 0.3);
+}
+
+.bundle-card:focus-visible {
+  outline: none;
+  border-color: var(--xinzuo-accent, #FFD380);
+  box-shadow: 0 0 0 3px rgba(255, 211, 128, 0.3);
 }
 
 
@@ -537,6 +600,10 @@ bundle-builder-component {
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .bundle-summary__cta:hover:not(:disabled) {
@@ -550,8 +617,36 @@ bundle-builder-component {
   cursor: not-allowed;
 }
 
+.bundle-summary__cta--loading {
+  opacity: 0.8;
+}
+
+.bundle-summary__cta--success {
+  background: #22C55E;
+  color: #fff;
+}
+
+.bundle-summary__cta--error {
+  background: #EF4444;
+  color: #fff;
+}
+
 .bundle-summary__cta--shake {
   animation: bundle-shake 0.5s ease;
+}
+
+/* Loading Spinner */
+.bundle-summary__cta-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(0, 0, 0, 0.2);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 @keyframes bundle-shake {
