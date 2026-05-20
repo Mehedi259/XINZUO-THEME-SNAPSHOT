@@ -1,14 +1,16 @@
-import { Component } from '@theme/component';
-import { CartAddEvent } from '@theme/events';
-
-class BundleBuilderComponent extends Component {
+/**
+ * Bundle Builder Component
+ * A standalone vanilla web component for building custom knife bundles with tiered discounts
+ * No external dependencies - works directly in the browser
+ */
+class BundleBuilderComponent extends HTMLElement {
   /** @type {Set<string>} Set of selected product IDs */
   #selectedProductIds = new Set();
 
   /** @type {Map<string, {variantId: string, price: number, comparePrice: number, title: string, image: string}>} */
   #productData = new Map();
 
-  /** @type {Array<{minItems: number, discountPercent: number, label: string}>} */
+  /** @type {Array<{minItems: number, discountPercent: number, label: string, discountCode: string}>} */
   #tiers = [];
 
   #minItems = 3;
@@ -18,16 +20,38 @@ class BundleBuilderComponent extends Component {
   /** @type {string} Currently active series filter handle ('all' = show all) */
   #activeTab = 'all';
 
+  /** @type {Object} Cached DOM references */
+  #refs = {};
+
   connectedCallback() {
-    super.connectedCallback();
+    this.#cacheRefs();
     this.#parseConfig();
     this.#parseProductData();
+    this.#attachEventListeners();
     this.#updateUI();
     this.#initTabArrows();
   }
 
-  // --- Configuration ---
+  /**
+   * Cache all DOM references using ref attributes
+   */
+  #cacheRefs() {
+    const refElements = this.querySelectorAll('[ref]');
+    refElements.forEach(el => {
+      const refName = el.getAttribute('ref');
+      if (refName.endsWith('[]')) {
+        const baseName = refName.slice(0, -2);
+        if (!this.#refs[baseName]) this.#refs[baseName] = [];
+        this.#refs[baseName].push(el);
+      } else {
+        this.#refs[refName] = el;
+      }
+    });
+  }
 
+  /**
+   * Parse configuration from data attributes
+   */
   #parseConfig() {
     this.#minItems = parseInt(this.dataset.minItems) || 3;
     this.#maxItems = parseInt(this.dataset.maxItems) || 8;
@@ -39,8 +63,11 @@ class BundleBuilderComponent extends Component {
     }
   }
 
+  /**
+   * Parse product data from card elements
+   */
   #parseProductData() {
-    const cards = this.refs.cards || [];
+    const cards = this.#refs.cards || [];
     for (const card of cards) {
       const productId = card.dataset.productId;
       this.#productData.set(productId, {
@@ -53,9 +80,55 @@ class BundleBuilderComponent extends Component {
     }
   }
 
+  /**
+   * Attach all event listeners
+   */
+  #attachEventListeners() {
+    // Card clicks
+    const cards = this.#refs.cards || [];
+    cards.forEach(card => {
+      card.addEventListener('click', (e) => this.#handleCardClick(e));
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          this.#handleCardClick(e);
+        }
+      });
+    });
+
+    // Tab clicks
+    const tabs = this.#refs.tabs || [];
+    tabs.forEach(tab => {
+      const series = tab.dataset.series;
+      tab.addEventListener('click', () => this.#handleTabClick(series));
+    });
+
+    // Tab arrows
+    if (this.#refs.tabArrowLeft) {
+      this.#refs.tabArrowLeft.addEventListener('click', () => this.#handleTabArrow('left'));
+    }
+    if (this.#refs.tabArrowRight) {
+      this.#refs.tabArrowRight.addEventListener('click', () => this.#handleTabArrow('right'));
+    }
+
+    // Add to cart button
+    if (this.#refs.addToCartBtn) {
+      this.#refs.addToCartBtn.addEventListener('click', () => this.#handleAddToCart());
+    }
+
+    // Tab scroll indicators
+    const container = this.#refs.tabsContainer;
+    if (container) {
+      container.addEventListener('scroll', () => this.#updateScrollIndicators(), { passive: true });
+      if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(() => this.#updateScrollIndicators()).observe(container);
+      }
+    }
+  }
+
   // --- Event Handlers ---
 
-  handleCardClick(event) {
+  #handleCardClick(event) {
     const card = event.target.closest('.bundle-card');
     if (!card) return;
     if (card.dataset.available === 'false') return;
@@ -79,7 +152,7 @@ class BundleBuilderComponent extends Component {
       card.setAttribute('aria-pressed', 'true');
     }
 
-    // Micro-interaction: brief scale pulse for tactile feedback
+    // Micro-interaction: brief scale pulse
     card.style.transform = 'scale(0.97)';
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -90,12 +163,12 @@ class BundleBuilderComponent extends Component {
     this.#updateUI();
   }
 
-  async handleAddToCart() {
+  async #handleAddToCart() {
     if (this.#isAddingToCart) return;
     if (this.#selectedProductIds.size < this.#minItems) return;
 
     this.#isAddingToCart = true;
-    const btn = this.refs.addToCartBtn;
+    const btn = this.#refs.addToCartBtn;
     const originalText = btn.textContent;
     btn.textContent = 'Adding...';
     btn.disabled = true;
@@ -104,7 +177,6 @@ class BundleBuilderComponent extends Component {
       const bundleId = `bundle_${Date.now()}`;
       const bundleCount = this.#selectedProductIds.size;
 
-      // Determine the discount percent and code for this bundle size
       let discountPercent = 0;
       let discountCode = '';
       for (const tier of this.#tiers) {
@@ -137,19 +209,15 @@ class BundleBuilderComponent extends Component {
         body: JSON.stringify({ items }),
       });
 
-      // Open cart drawer so the customer can review their bundle
-      // before deciding to checkout. The discount code will be applied
-      // at checkout via the cart drawer's checkout button.
       let cart = await fetch('/cart.js').then((r) => r.json());
 
-      document.dispatchEvent(
-        new CartAddEvent({}, this.dataset.sectionId, {
+      // Dispatch custom event for cart drawer
+      document.dispatchEvent(new CustomEvent('cart:add', {
+        detail: {
           source: 'bundle-builder',
           itemCount: cart.item_count,
-          productId: '',
-          sections: [],
-        })
-      );
+        }
+      }));
 
       btn.textContent = 'Added to Cart!';
       setTimeout(() => {
@@ -168,17 +236,15 @@ class BundleBuilderComponent extends Component {
     }
   }
 
-
-
-  handleTabClick(seriesHandle, event) {
+  #handleTabClick(seriesHandle) {
     this.#activeTab = seriesHandle;
     this.#updateTabActiveStates();
     this.#filterCards();
     this.#scrollActiveTabIntoView();
   }
 
-  handleTabArrow(direction) {
-    const container = this.refs.tabsContainer;
+  #handleTabArrow(direction) {
+    const container = this.#refs.tabsContainer;
     if (!container) return;
     const scrollAmount = container.offsetWidth * 0.65;
     container.scrollBy({
@@ -187,49 +253,37 @@ class BundleBuilderComponent extends Component {
     });
   }
 
-  // --- Tab Scroll ---
+  // --- Tab Management ---
 
   #initTabArrows() {
-    const container = this.refs.tabsContainer;
-    if (!container) return;
-
-    container.addEventListener('scroll', () => this.#updateScrollIndicators(), { passive: true });
-
-    if (typeof ResizeObserver !== 'undefined') {
-      new ResizeObserver(() => this.#updateScrollIndicators()).observe(container);
-    }
-
     this.#updateScrollIndicators();
   }
 
   #updateScrollIndicators() {
-    const container = this.refs.tabsContainer;
+    const container = this.#refs.tabsContainer;
     if (!container) return;
 
     const { scrollLeft, scrollWidth, clientWidth } = container;
     const canScrollLeft = scrollLeft > 2;
     const canScrollRight = scrollLeft + clientWidth < scrollWidth - 2;
 
-    // Fade masks
-    if (this.refs.tabFadeLeft) {
-      this.refs.tabFadeLeft.classList.toggle('bundle-tabs__fade--visible', canScrollLeft);
+    if (this.#refs.tabFadeLeft) {
+      this.#refs.tabFadeLeft.classList.toggle('bundle-tabs__fade--visible', canScrollLeft);
     }
-    if (this.refs.tabFadeRight) {
-      this.refs.tabFadeRight.classList.toggle('bundle-tabs__fade--visible', canScrollRight);
+    if (this.#refs.tabFadeRight) {
+      this.#refs.tabFadeRight.classList.toggle('bundle-tabs__fade--visible', canScrollRight);
     }
-
-    // Arrow buttons
-    if (this.refs.tabArrowLeft) {
-      this.refs.tabArrowLeft.classList.toggle('bundle-tabs__arrow--visible', canScrollLeft);
+    if (this.#refs.tabArrowLeft) {
+      this.#refs.tabArrowLeft.classList.toggle('bundle-tabs__arrow--visible', canScrollLeft);
     }
-    if (this.refs.tabArrowRight) {
-      this.refs.tabArrowRight.classList.toggle('bundle-tabs__arrow--visible', canScrollRight);
+    if (this.#refs.tabArrowRight) {
+      this.#refs.tabArrowRight.classList.toggle('bundle-tabs__arrow--visible', canScrollRight);
     }
   }
 
   #scrollActiveTabIntoView() {
-    const tabs = this.refs.tabs || [];
-    const container = this.refs.tabsContainer;
+    const tabs = this.#refs.tabs || [];
+    const container = this.#refs.tabsContainer;
     if (!container) return;
 
     const activeTab = tabs.find((t) => t.dataset.series === this.#activeTab);
@@ -246,10 +300,8 @@ class BundleBuilderComponent extends Component {
     }
   }
 
-  // --- Tab Filtering ---
-
   #updateTabActiveStates() {
-    const tabs = this.refs.tabs || [];
+    const tabs = this.#refs.tabs || [];
     for (const tab of tabs) {
       const isActive = tab.dataset.series === this.#activeTab;
       tab.classList.toggle('bundle-tabs__tab--active', isActive);
@@ -258,7 +310,7 @@ class BundleBuilderComponent extends Component {
   }
 
   #filterCards() {
-    const cards = this.refs.cards || [];
+    const cards = this.#refs.cards || [];
     for (const card of cards) {
       if (this.#activeTab === 'all') {
         card.style.display = '';
@@ -277,7 +329,7 @@ class BundleBuilderComponent extends Component {
   }
 
   #updateTabCounts() {
-    const tabs = this.refs.tabs || [];
+    const tabs = this.#refs.tabs || [];
     for (const tab of tabs) {
       const series = tab.dataset.series;
       const countEl = tab.querySelector('[data-series-count]');
@@ -287,7 +339,7 @@ class BundleBuilderComponent extends Component {
       if (series === 'all') {
         count = this.#selectedProductIds.size;
       } else {
-        const cards = this.refs.cards || [];
+        const cards = this.#refs.cards || [];
         for (const card of cards) {
           const seriesList = (card.dataset.series || '').split(' ');
           if (seriesList.includes(series) && this.#selectedProductIds.has(card.dataset.productId)) {
@@ -305,46 +357,37 @@ class BundleBuilderComponent extends Component {
     const count = this.#selectedProductIds.size;
     const hasSelection = count > 0;
 
-    // Show/hide summary bar
-    const summaryBar = this.refs.summaryBar;
+    const summaryBar = this.#refs.summaryBar;
     if (summaryBar) {
-      if (hasSelection) {
-        summaryBar.classList.add('bundle-summary--visible');
-      } else {
-        summaryBar.classList.remove('bundle-summary--visible');
-      }
+      summaryBar.classList.toggle('bundle-summary--visible', hasSelection);
     }
 
-    // Update count text
-    if (this.refs.countText) {
-      this.refs.countText.textContent = `${count} of ${this.#maxItems} selected`;
+    if (this.#refs.countText) {
+      this.#refs.countText.textContent = `${count} of ${this.#maxItems} selected`;
     }
 
-    // Update progress text in header
-    if (this.refs.progressText) {
+    if (this.#refs.progressText) {
       if (count === 0) {
-        this.refs.progressText.textContent = `Select at least ${this.#minItems} items to unlock your discount`;
-        this.refs.progressText.classList.remove('bundle-builder__progress--complete');
+        this.#refs.progressText.textContent = `Select at least ${this.#minItems} items to unlock your discount`;
+        this.#refs.progressText.classList.remove('bundle-builder__progress--complete');
       } else if (count < this.#minItems) {
         const remaining = this.#minItems - count;
-        this.refs.progressText.textContent = `Select ${remaining} more item${remaining > 1 ? 's' : ''} to unlock your discount`;
-        this.refs.progressText.classList.remove('bundle-builder__progress--complete');
+        this.#refs.progressText.textContent = `Select ${remaining} more item${remaining > 1 ? 's' : ''} to unlock your discount`;
+        this.#refs.progressText.classList.remove('bundle-builder__progress--complete');
       } else {
-        this.refs.progressText.textContent = `${count} item${count > 1 ? 's' : ''} selected — discount applied at checkout!`;
-        this.refs.progressText.classList.add('bundle-builder__progress--complete');
+        this.#refs.progressText.textContent = `${count} item${count > 1 ? 's' : ''} selected — discount applied at checkout!`;
+        this.#refs.progressText.classList.add('bundle-builder__progress--complete');
       }
     }
 
-    // Update progress bar — fills to 100% at max discount tier
-    if (this.refs.progressFill) {
+    if (this.#refs.progressFill) {
       const lastTierMin = this.#tiers.length > 0
         ? this.#tiers[this.#tiers.length - 1].minItems
         : this.#maxItems;
       const percent = Math.min((count / lastTierMin) * 100, 100);
-      this.refs.progressFill.style.width = `${percent}%`;
+      this.#refs.progressFill.style.width = `${percent}%`;
 
-      // Color based on tier achievement
-      const fill = this.refs.progressFill;
+      const fill = this.#refs.progressFill;
       fill.classList.remove('bundle-summary__progress-fill--tier-active', 'bundle-summary__progress-fill--complete');
       if (count >= lastTierMin) {
         fill.classList.add('bundle-summary__progress-fill--complete');
@@ -352,26 +395,20 @@ class BundleBuilderComponent extends Component {
         fill.classList.add('bundle-summary__progress-fill--tier-active');
       }
 
-      // Update tier markers
-      const markers = this.refs.tierMarkers || [];
+      const markers = this.#refs.tierMarkers || [];
       for (const marker of markers) {
         const tierMin = parseInt(marker.dataset.tierMin) || 0;
         marker.classList.toggle('bundle-summary__tier-marker--reached', count >= tierMin);
       }
     }
 
-    // Calculate totals and active tier
     this.#updateTotals(count);
-
-    // Update thumbnails
     this.#updateThumbnails();
 
-    // Enable/disable CTA
-    if (this.refs.addToCartBtn) {
-      this.refs.addToCartBtn.disabled = count < this.#minItems || this.#isAddingToCart;
+    if (this.#refs.addToCartBtn) {
+      this.#refs.addToCartBtn.disabled = count < this.#minItems || this.#isAddingToCart;
     }
 
-    // Update per-tab selected counts
     this.#updateTabCounts();
   }
 
@@ -382,7 +419,6 @@ class BundleBuilderComponent extends Component {
       if (data) totalPrice += data.price;
     }
 
-    // Find active and next tier
     let activeTier = null;
     let nextTier = null;
     for (let i = 0; i < this.#tiers.length; i++) {
@@ -395,62 +431,53 @@ class BundleBuilderComponent extends Component {
       nextTier = this.#tiers[0];
     }
 
-    // Display prices
     if (activeTier) {
       const savingsAmount = Math.round((totalPrice * activeTier.discountPercent) / 100);
       const discountedPrice = totalPrice - savingsAmount;
 
-      // Show original price with strikethrough
-      if (this.refs.originalPrice) {
-        this.refs.originalPrice.textContent = this.#formatMoney(totalPrice);
-        this.refs.originalPrice.hidden = false;
+      if (this.#refs.originalPrice) {
+        this.#refs.originalPrice.textContent = this.#formatMoney(totalPrice);
+        this.#refs.originalPrice.hidden = false;
       }
-
-      // Show discounted price in red
-      if (this.refs.totalPrice) {
-        this.refs.totalPrice.textContent = this.#formatMoney(discountedPrice);
-        this.refs.totalPrice.classList.add('bundle-summary__total-price--discounted');
+      if (this.#refs.totalPrice) {
+        this.#refs.totalPrice.textContent = this.#formatMoney(discountedPrice);
+        this.#refs.totalPrice.classList.add('bundle-summary__total-price--discounted');
       }
-
-      // Show savings text
-      if (this.refs.totalSavings) {
-        this.refs.totalSavings.textContent = `You save ${this.#formatMoney(savingsAmount)}`;
-        this.refs.totalSavings.hidden = false;
+      if (this.#refs.totalSavings) {
+        this.#refs.totalSavings.textContent = `You save ${this.#formatMoney(savingsAmount)}`;
+        this.#refs.totalSavings.hidden = false;
       }
     } else {
-      // No tier active — show normal price
-      if (this.refs.originalPrice) {
-        this.refs.originalPrice.hidden = true;
+      if (this.#refs.originalPrice) {
+        this.#refs.originalPrice.hidden = true;
       }
-      if (this.refs.totalPrice) {
-        this.refs.totalPrice.textContent = this.#formatMoney(totalPrice);
-        this.refs.totalPrice.classList.remove('bundle-summary__total-price--discounted');
+      if (this.#refs.totalPrice) {
+        this.#refs.totalPrice.textContent = this.#formatMoney(totalPrice);
+        this.#refs.totalPrice.classList.remove('bundle-summary__total-price--discounted');
       }
-      if (this.refs.totalSavings) {
-        this.refs.totalSavings.hidden = true;
+      if (this.#refs.totalSavings) {
+        this.#refs.totalSavings.hidden = true;
       }
     }
 
-    // Display tier label
-    if (this.refs.tierLabel) {
-      this.refs.tierLabel.textContent = activeTier ? activeTier.label : '';
+    if (this.#refs.tierLabel) {
+      this.#refs.tierLabel.textContent = activeTier ? activeTier.label : '';
     }
 
-    // Display next tier hint
-    if (this.refs.nextTierHint) {
+    if (this.#refs.nextTierHint) {
       if (nextTier) {
         const needed = nextTier.minItems - count;
-        this.refs.nextTierHint.textContent = `Add ${needed} more for ${nextTier.label}!`;
+        this.#refs.nextTierHint.textContent = `Add ${needed} more for ${nextTier.label}!`;
       } else if (activeTier) {
-        this.refs.nextTierHint.textContent = 'Maximum discount unlocked!';
+        this.#refs.nextTierHint.textContent = 'Maximum discount unlocked!';
       } else {
-        this.refs.nextTierHint.textContent = '';
+        this.#refs.nextTierHint.textContent = '';
       }
     }
   }
 
   #updateThumbnails() {
-    const strip = this.refs.thumbnailStrip;
+    const strip = this.#refs.thumbnailStrip;
     if (!strip) return;
 
     strip.innerHTML = '';
@@ -473,7 +500,7 @@ class BundleBuilderComponent extends Component {
   }
 
   #shakeButton() {
-    const btn = this.refs.addToCartBtn;
+    const btn = this.#refs.addToCartBtn;
     if (!btn) return;
     btn.classList.add('bundle-summary__cta--shake');
     setTimeout(() => btn.classList.remove('bundle-summary__cta--shake'), 500);
